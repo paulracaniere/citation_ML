@@ -41,19 +41,22 @@ def graph_authors(citation_set, node_info, IDs, directed_or_not = 'n'):
     for citation in citation_set:
         source = int(citation[0])
         target = int(citation[1])
-        
-        print(node_info[reverse_index[source],3])
-        if node_info[reverse_index[source],3]:
+                        
+        if type(node_info[reverse_index[source],3]) != float:
             source_authors = re.sub(r',Jr.?', 'Jr',
                                 re.sub(r',(?=[a-z])', '',
                                        re.sub(r'\([^)]*\)?', '',
                                               re.sub(r' ', '' , node_info[reverse_index[source],3])))).split(",")
         else:
             source_authors = []
-        target_authors = re.sub(r',Jr.?', 'Jr',
-                            re.sub(r',(?=[a-z])', '',
-                                   re.sub(r'\([^)]*\)?', '',
-                                          re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",") if node_info[reverse_index[target],3] else []
+            
+        if type(node_info[reverse_index[target],3]) != float:
+            target_authors = re.sub(r',Jr.?', 'Jr',
+                                    re.sub(r',(?=[a-z])', '',
+                                           re.sub(r'\([^)]*\)?', '',
+                                                  re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",")
+        else:
+            target_authors = []
         
         #print(source_authors[:10])
         
