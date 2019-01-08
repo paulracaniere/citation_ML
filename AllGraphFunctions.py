@@ -8,6 +8,7 @@ Created on Mon Jan  7 11:58:54 2019
 import networkx as nx
 import numpy as np
 import operator
+import re
 
 def graph_articles(citation_set, node_info, directed_or_not = 'n'):
     if directed_or_not == 'y':
@@ -18,14 +19,19 @@ def graph_articles(citation_set, node_info, directed_or_not = 'n'):
         if node[0] != 'ID':
             G.add_node(int(node[0]), year = node[1])
     for i in citation_set:
-        if i[2] == 1:
-            if G.node[i[0]]['year'] < G.node[i[1]]['year']:
+        if i[2] == 1 or i[2] == '1':
+            if G.node[int(i[0])]['year'] <= G.node[int(i[1])]['year']:
                 G.add_edge(i[0], i[1])
             else:
                 G.add_edge(i[1], i[0])
     return G
 
 def graph_authors(citation_set, node_info, IDs, directed_or_not = 'n'):
+    
+    reverse_index = dict()
+    for i,a in enumerate(node_info):
+        reverse_index[int(a[0])] = i
+    
     if directed_or_not == 'y':
         G = nx.DiGraph()
     else:
@@ -33,21 +39,37 @@ def graph_authors(citation_set, node_info, IDs, directed_or_not = 'n'):
     
     counter = 0
     for citation in citation_set:
-        source = citation[0]
-        target = citation[1]
+        source = int(citation[0])
+        target = int(citation[1])
         
-        source_authors = [element[3].split(",") for element in node_info if element[0]==source][0]
-        target_authors = [element[3].split(",") for element in node_info if element[0]==target][0]
+        print(node_info[reverse_index[source],3])
+        if node_info[reverse_index[source],3]:
+            source_authors = re.sub(r',Jr.?', 'Jr',
+                                re.sub(r',(?=[a-z])', '',
+                                       re.sub(r'\([^)]*\)?', '',
+                                              re.sub(r' ', '' , node_info[reverse_index[source],3])))).split(",")
+        else:
+            source_authors = []
+        target_authors = re.sub(r',Jr.?', 'Jr',
+                            re.sub(r',(?=[a-z])', '',
+                                   re.sub(r'\([^)]*\)?', '',
+                                          re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",") if node_info[reverse_index[target],3] else []
         
-        if citation[2] == '1':
+        #print(source_authors[:10])
+        
+        if citation[2] == '1' or citation[2] == 1:
             for auth1 in source_authors:
-                for auth2 in target_authors:
-                    G.add_edge(auth1, auth2)
+                if auth1 != '':
+                    for auth2 in target_authors:
+                        if auth2 != '':
+                            G.add_edge(auth1, auth2)
         else:
             for auth1 in source_authors:
-                for auth2 in target_authors:
-                    G.add_node(auth1)
-                    G.add_node(auth2)
+                if auth1 != '':
+                    for auth2 in target_authors:
+                        if auth2 != '':
+                            G.add_node(auth1)
+                            G.add_node(auth2)
                
         counter += 1
     
@@ -67,25 +89,35 @@ def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
         source = citation[0]
         target = citation[1]
         
-        source_authors = [element[3].split(",") for element in node_info if element[0]==source][0]
-        target_authors = [element[3].split(",") for element in node_info if element[0]==target][0]
+        source_authors = [re.sub(r',Jr.?', 'Jr',
+                            re.sub(r',(?=[a-z])', '',
+                                   re.sub(r'\([^)]*\)?', '',
+                                          re.sub(r' ', '' , element[3])))).split(",") for element in node_info if element[0]==source][0]
+        target_authors = [re.sub(r',Jr.?', 'Jr',
+                            re.sub(r',(?=[a-z])', '',
+                                   re.sub(r'\([^)]*\)?', '',
+                                          re.sub(r' ', '' , element[3])))).split(",") for element in node_info if element[0]==target][0]
         
-        if citation[2] == '1':
+        if citation[2] == '1' or citation[2] == 1:
             for auth1 in source_authors:
-                for auth2 in target_authors:
-                    if (auth1,auth2) in G.edges:
-                        G.get_edge_data(auth1,auth2)['weight'] += 1
-                    else:
-                        G.add_edge(auth1, auth2, weight=1)
+                if auth1 != '':
+                    for auth2 in target_authors:
+                        if auth2 != '':
+                            if (auth1,auth2) in G.edges:
+                                G.get_edge_data(auth1,auth2)['weight'] += 1
+                            else:
+                                G.add_edge(auth1, auth2, weight=1)
         else:
             for auth1 in source_authors:
-                for auth2 in target_authors:
-                    G.add_edge(auth1, auth2, weight=0)
+                if auth1 != '':
+                    for auth2 in target_authors:
+                        if auth2 != '':
+                            G.add_edge(auth1, auth2, weight=0)
                
         counter += 1
     
         if counter % 5000 == True:
-            print(counter, "training examples processsed")
+            print(counter, "traininefgesgsegg examples processsed")
     
     return G
 
@@ -130,7 +162,7 @@ def compute_page_rank_feature_for_articles(citation_set, G=None):
         return np.array(pg_rk_features)
 
 def one_page_rank_feature_for_articles(citation, pg_rk):
-    return pg_rk[citation[0]] + pg_rk[citation[1]]
+    return pg_rk[int(citation[0])] + pg_rk[int(citation[1])]
     
 def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
     if G != G:
@@ -188,8 +220,15 @@ def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
             G.node[k]['pageclub'] = 1
             
         i+=1
+    
+    features_edges = []
+    for citation in training_set:
+        ic0 = key_dict[int(citation[0])]
+        ic1 = key_dict[int(citation[1])]
+        features_edges.append(G.node[int(citation[0])]['pageclub'] + G.node[int(citation[1])]['pageclub'])
+
         
-    return pageclub
+    return features_edges
 
 def compute_page_rank_feature_for_authors(citation_set, node_info, G=None):
     if G != G:
