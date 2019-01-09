@@ -101,7 +101,7 @@ def h_index(citation_set, node_info, G):
     authors_of_paper = defaultdict(list)
     for author in papers_by_author:
         for paper in papers_by_author[author]:
-            authors_of_paper[article].append(author)
+            authors_of_paper[paper].append(author)
     
     #compute the h-index for every author
     authors_h_index = dict()
