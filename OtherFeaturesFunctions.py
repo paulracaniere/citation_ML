@@ -17,7 +17,10 @@ import AllGraphFunctions as GF
 from gensim.models.doc2vec import Doc2Vec, TaggedDocument
 import scipy
 
+import re
+from collections import defaultdict
 
+import operator
 
 def initialize_nltk():
     nltk.download('punkt') # for tokenization
@@ -27,29 +30,16 @@ def initialize_nltk():
     
     return stpwds, stemmer
 
-def abstract_TFIDF(node_info, stpwds):
-    corpus = [element[5] for element in node_info]
-    vectorizer = TfidfVectorizer(stop_words="english")
-    features_TFIDF = vectorizer.fit_transform(corpus)
-
-    return features_TFIDF
-
-def title_TFIDF(node_info, stpwds):
-    corpus = [element[2] for element in node_info]
-    vectorizer = TfidfVectorizer(stop_words="english")
-    features_TFIDF = vectorizer.fit_transform(corpus)
-
-    return features_TFIDF
 
 def title_doc2voc(node_info, citation_set):
-    token_title =    [TaggedDocument(words=nltk.tokenize.word_tokenize(element[2].lower()),tags=[str(element[0])]) for i,element in enumerate(node_inf)]
+    token_title =    [TaggedDocument(words=nltk.tokenize.word_tokenize(element[2].lower()),tags=[str(element[0])]) for i,element in enumerate(node_info)]
     model_title = Doc2Vec(size=128,
                 alpha=0.025, 
                 min_alpha=0.00025,
                 min_count=1,
                 dm =0)
     model_title.build_vocab(token_title)
-    for epoch in range(100):
+    for epoch in range(20):
         model_title.train(token_title,
                     total_examples=model_title.corpus_count,
                     epochs=model_title.iter)
@@ -66,7 +56,7 @@ def title_doc2voc(node_info, citation_set):
     return titlefeatures
 
 def abstract_doc2voc(node_info,citation_set):
-    token_abstract = [TaggedDocument(words=nltk.tokenize.word_tokenize(element[5].lower()),tags=[str(element[0])]) for i,element in enumerate(node_inf)]
+    token_abstract = [TaggedDocument(words=nltk.tokenize.word_tokenize(element[5].lower()),tags=[str(element[0])]) for i,element in enumerate(node_info)]
     model_abstract = Doc2Vec(size=128,
                 alpha=0.025, 
                 min_alpha=0.00025,
@@ -74,7 +64,7 @@ def abstract_doc2voc(node_info,citation_set):
                 dm =0)
     model_abstract.build_vocab(token_abstract)
 
-    for epoch in range(100):
+    for epoch in range(20):
         model_abstract.train(token_abstract,
                     total_examples=model_abstract.corpus_count,
                     epochs=model_abstract.iter)
@@ -91,79 +81,93 @@ def abstract_doc2voc(node_info,citation_set):
     return abstractfeatures
 
 def h_index(citation_set, node_info, G):
-    all_auth = np.array([(re.sub(r',Jr.?', 'Jr',
+    
+    #We clean the authors names and put them into a single array
+    authors_array = np.array([(re.sub(r',Jr.?', 'Jr',
                             re.sub(r',(?=[a-z])', '',
                                    re.sub(r'\([^)]*\)?', '',
-                                          re.sub(r' ', '' , a[3])))).split(","),a[0]) if type(a[3]) == str else [] for a in node_inf])
-    authors = defaultdict(list)
-    for a,c in zip(all_auth,node_inf):
+                                          re.sub(r' ', '' , a[3])))).split(","),a[0]) if type(a[3]) == str else [] for a in node_info])
+    
+    #papers_by_author gives the id of the papers an author wrote
+    papers_by_author = defaultdict(list)
+    for a in authors_array:
         if a != []:
-            #print(a)
             (b,i) = a
-            for auteur in b:
-                authors[auteur].append(i)
-
-    del authors['']
+            for author in b:
+                papers_by_author[author].append(i)
+    del papers_by_author['']
     
-    authors_inv = defaultdict(list)
-    for auth in authors:
-        for art in authors[auth]:
-            authors_inv[art].append(auth)
+    #papers_by_author gives the id of the papers an author wrote
+    authors_of_paper = defaultdict(list)
+    for author in papers_by_author:
+        for paper in papers_by_author[author]:
+            authors_of_paper[article].append(author)
     
-    authors_h = dict()
-    for aut in authors.keys():
-        liste = [G.in_degree(int(i)) for i in authors[aut]]
-        liste.sort(reverse=True)
+    #compute the h-index for every author
+    authors_h_index = dict()
+    for author in papers_by_author.keys():
+        nb_citations = [G.in_degree(int(i)) for i in papers_by_author[author]]
+        nb_citations.sort(reverse=True)
         i=1
         j=0
-        while j<len(liste) and liste[j] >= i:
+        while j<len(nb_citations) and nb_citations[j] >= i:
             i+=1
             j+=1
+        authors_h_index[author] = i-1
         
-        authors_h[aut] = i-1
-        
+    #compute the average h-index of a paper as the average of its authors
     for i in G:
-    #print(i)
-        auteurs = authors_inv[i]
-        if auteurs==[]:
+        authors_of_i = authors_of_paper[i]
+        if authors_of_i==[]:
             G.node[int(i)]['h-index'] = 1
         else:
-            hlist = [authors_h[j] for j in auteurs]
-    #if len(hlist) == 0:
-    #    G.node[i]['h-index'] = 1
-            G.node[int(i)]['h-index'] = sum(hlist)/len(hlist)
-        
-    hindexfeatures = []
-    for citation in training_set:
+            h_index_of_i = [authors_h_index[j] for j in authors_of_i]
+            G.node[int(i)]['h-index'] = sum(h_index_of_i)/len(h_index_of_i)
+     
+    #compute the h_index features of every edge in the set
+    h_index_features = []
+    for citation in citation_set:
         a=0
         b=0
-        if(G.has_node(int(citation[0]))):
-            a = G.node[int(citation[0])]['h-index']
-        if(G.has_node(int(citation[1]))):
-            b = G.node[int(citation[1])]['h-index']
-        hindexfeatures.append((a + b)/2)
+        i0 = int(citation[0])
+        i1 = int(citation[1])
+        if(G.has_node(i0)):
+            a = G.node[i0]['h-index']
+        if(G.has_node(i1)):
+            b = G.node[i1]['h-index']
+        h_index_features.append((a + b)/2)
     
-    return hindexfeatures
+    return h_index_features
 
 
+def abstract_TFIDF(node_info, stpwds, stemmer):
+    corpus = [' '.join([stemmer.stem(a) for a in nltk.tokenize.word_tokenize(element[5])]) for element in node_info]
+    vectorizer = TfidfVectorizer(stop_words="english")
+    features_TFIDF = vectorizer.fit_transform(corpus)
+
+    return features_TFIDF
+
+def title_TFIDF(node_info, stpwds, stemmer):
+    corpus = [' '.join([stemmer.stem(a) for a in nltk.tokenize.word_tokenize(element[2])]) for element in node_info]
+    vectorizer = TfidfVectorizer(stop_words="english")
+    features_TFIDF = vectorizer.fit_transform(corpus)
+
+    return features_TFIDF
     
-def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds):
+def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds,  stemmer):
         dist_abstract = []
-        TFIDF_abstract = abstract_TFIDF(node_info, stpwds)
-        
+        TFIDF_abstract = abstract_TFIDF(node_info, stpwds, stemmer)
+
+        reverse_index = dict()
+        for i,a in enumerate(node_info):
+            reverse_index[int(a[0])] = i
+
         counter = 0
         for i in range(len(citation_set)):
             source = citation_set[i][0]
             target = citation_set[i][1]
-            index_source = IDs.index(source)
-            index_target = IDs.index(target)
     
-            dist_abstract.append(
-                np.linalg.norm(
-                    (TFIDF_abstract[index_source]-TFIDF_abstract[index_target]
-                    ).toarray()
-                )
-            )
+            dist_abstract.append((TFIDF_abstract[reverse_index[source]].dot(TFIDF_abstract[reverse_index[target]].T))[0,0])
     
             counter += 1
             if counter % 5000 == True:
@@ -173,24 +177,20 @@ def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds):
         
         return dist_abstract
     
-def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds):
+def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds, stemmer):
         dist_title = []
-        TFIDF_title = title_TFIDF(node_info, stpwds)
+        TFIDF_title = title_TFIDF(node_info, stpwds, stemmer)
+        
+        reverse_index = dict()
+        for i,a in enumerate(node_info):
+            reverse_index[int(a[0])] = i
         
         counter = 0
         for i in range(len(citation_set)):
             source = citation_set[i][0]
             target = citation_set[i][1]
     
-            index_source = IDs.index(source)
-            index_target = IDs.index(target)
-    
-            dist_title.append(
-                np.linalg.norm(
-                    (TFIDF_title[index_source]-TFIDF_title[index_target]
-                    ).toarray()
-                )
-            )
+            dist_title.append((TFIDF_title[reverse_index[source]].dot(TFIDF_title[reverse_index[target]].T))[0,0])
     
             counter += 1
             if counter % 5000 == True:
@@ -202,14 +202,18 @@ def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds):
     
 def compute_temp_diff(citation_set, node_info, IDs):
         temp_diff = []
+
+        reverse_index = dict()
+        for i,a in enumerate(node_info):
+            reverse_index[int(a[0])] = i
         
         counter = 0
         for i in range(len(citation_set)):
             source = citation_set[i][0]
             target = citation_set[i][1]
     
-            source_info = [element for element in node_info if element[0]==source][0]
-            target_info = [element for element in node_info if element[0]==target][0]
+            source_info = node_info[reverse_index[source]]
+            target_info = node_info[reverse_index[target]]
             
             temp_diff.append(
                     int(source_info[1]) - int(target_info[1])
@@ -226,13 +230,17 @@ def compute_temp_diff(citation_set, node_info, IDs):
 def compute_overlaping_titles(citation_set, node_info, IDs, stemmer, stpwds):
         overlap_title = []
         
+        reverse_index = dict()
+        for i,a in enumerate(node_info):
+            reverse_index[int(a[0])] = i        
+        
         counter = 0
         for i in range(len(citation_set)):
             source = citation_set[i][0]
             target = citation_set[i][1]
     
-            source_info = [element for element in node_info if element[0]==source][0]
-            target_info = [element for element in node_info if element[0]==target][0]
+            source_info = node_info[reverse_index[source]]
+            target_info = node_info[reverse_index[target]]
     
             
             source_title = source_info[2].lower().split(" ")
@@ -259,16 +267,27 @@ def compute_overlaping_titles(citation_set, node_info, IDs, stemmer, stpwds):
 def compute_common_auth(citation_set, node_info, IDs):
         comm_auth = []
         
+        reverse_index = dict()
+        for i,a in enumerate(node_info):
+            reverse_index[int(a[0])] = i
+        
         counter = 0
         for i in range(len(citation_set)):
             source = citation_set[i][0]
             target = citation_set[i][1]
     
-            source_info = [element for element in node_info if element[0]==source][0]
-            target_info = [element for element in node_info if element[0]==target][0]
+            source_info = node_info[reverse_index[source]]
+            target_info = node_info[reverse_index[target]]
             
-            source_auth = source_info[3].split(",")
-            target_auth = target_info[3].split(",")
+            if type(source_info[3]) != float:
+                source_auth = source_info[3].split(",")
+            else:
+                source_auth = []
+                
+            if type(target_info[3]) != float:
+                target_auth = target_info[3].split(",")
+            else:
+                target_auth = []
             
             comm_auth.append(
                     len(set(source_auth).intersection(set(target_auth)))
@@ -299,14 +318,20 @@ def compute_author_affinity(citation_set, node_info, G, IDs):
 
 def compute_same_journal_or_not(citation_set, node_info):
         same_journal = []
-        
+
+        reverse_index = dict()
+        for i,a in enumerate(node_info):
+            reverse_index[int(a[0])] = i
+            
         counter = 0
         for i in range(len(citation_set)):
             source = citation_set[i][0]
             target = citation_set[i][1]
     
-            source_info = [element for element in node_info if element[0]==source][0]
-            target_info = [element for element in node_info if element[0]==target][0]
+         
+            source_info = node_info[reverse_index[source]]
+            target_info = node_info[reverse_index[target]]
+
             
             same_journal.append(
                     int(source_info[4] == target_info[4])
