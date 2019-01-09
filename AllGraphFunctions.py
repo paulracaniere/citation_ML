@@ -82,6 +82,10 @@ def graph_authors(citation_set, node_info, IDs, directed_or_not = 'n'):
     return G
 
 def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
+    reverse_index = dict()
+    for i,a in enumerate(node_info):
+        reverse_index[int(a[0])] = i
+    
     if directed_or_not == 'y':
         G = nx.DiGraph()
     else:
@@ -89,17 +93,26 @@ def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
     
     counter = 0
     for citation in citation_set:
-        source = citation[0]
-        target = citation[1]
+        source = int(citation[0])
+        target = int(citation[1])
+                        
+        if type(node_info[reverse_index[source],3]) != float:
+            source_authors = re.sub(r',Jr.?', 'Jr',
+                                re.sub(r',(?=[a-z])', '',
+                                       re.sub(r'\([^)]*\)?', '',
+                                              re.sub(r' ', '' , node_info[reverse_index[source],3])))).split(",")
+        else:
+            source_authors = []
+            
+        if type(node_info[reverse_index[target],3]) != float:
+            target_authors = re.sub(r',Jr.?', 'Jr',
+                                    re.sub(r',(?=[a-z])', '',
+                                           re.sub(r'\([^)]*\)?', '',
+                                                  re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",")
+        else:
+            target_authors = []
         
-        source_authors = [re.sub(r',Jr.?', 'Jr',
-                            re.sub(r',(?=[a-z])', '',
-                                   re.sub(r'\([^)]*\)?', '',
-                                          re.sub(r' ', '' , element[3])))).split(",") for element in node_info if element[0]==source][0]
-        target_authors = [re.sub(r',Jr.?', 'Jr',
-                            re.sub(r',(?=[a-z])', '',
-                                   re.sub(r'\([^)]*\)?', '',
-                                          re.sub(r' ', '' , element[3])))).split(",") for element in node_info if element[0]==target][0]
+        #print(source_authors[:10])
         
         if citation[2] == '1' or citation[2] == 1:
             for auth1 in source_authors:
@@ -116,11 +129,33 @@ def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
                     for auth2 in target_authors:
                         if auth2 != '':
                             G.add_edge(auth1, auth2, weight=0)
+            
                
         counter += 1
     
         if counter % 5000 == True:
             print(counter, "traininefgesgsegg examples processsed")
+    
+    for node in node_info:
+        
+        if type(node_info[reverse_index[target],3]) != float:
+            authors_art = re.sub(r',Jr.?', 'Jr',
+                                re.sub(r',(?=[a-z])', '',
+                                       re.sub(r'\([^)]*\)?', '',
+                                              re.sub(r' ', '' , node[3])))).split(",")
+        else:
+            authors_art = []
+        
+        if len(authors_art) >= 2:
+            for i in range(len(authors_art)):
+                for j in range(i,len(authors_art)):
+                    auth1 = authors_art[i]
+                    auth2= authors_art[j]
+                    if G.has_edge(auth1,auth2):
+                        G.get_edge_data(auth1,auth2)['weight'] += 1
+                    else:
+                        G.add_edge(auth1, auth2, weight=1)
+        
     
     return G
 
@@ -128,19 +163,39 @@ def compute_authors_affinity_for_article(citation_set, node_info, G=None):
     if G != G:
         G = graph_authors_weight(citation_set, node_info)
     
+    reverse_index = dict()
+    for i,a in enumerate(node_info):
+        reverse_index[int(a[0])] = i
+    
     affinities = []
     
     for citation in citation_set:
         source = citation[0]
         target = citation[1]
         
-        source_authors = [element[3].split(",") for element in node_info if element[0]==source][0]
-        target_authors = [element[3].split(",") for element in node_info if element[0]==target][0]
+        if type(node_info[reverse_index[source],3]) != float:
+            source_authors = re.sub(r',Jr.?', 'Jr',
+                                re.sub(r',(?=[a-z])', '',
+                                       re.sub(r'\([^)]*\)?', '',
+                                              re.sub(r' ', '' , node_info[reverse_index[source],3])))).split(",")
+        else:
+            source_authors = []
+            
+        if type(node_info[reverse_index[target],3]) != float:
+            target_authors = re.sub(r',Jr.?', 'Jr',
+                                    re.sub(r',(?=[a-z])', '',
+                                           re.sub(r'\([^)]*\)?', '',
+                                                  re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",")
+        else:
+            target_authors = []
         
         feature = 0
         for auth1 in source_authors:
-            for auth2 in target_authors:
-                feature += G.get_edge_data(auth1, auth2)['weight']
+            if auth1 != '':
+                for auth2 in target_authors:
+                    if auth2 != '':
+                        if G.has_edge(auth1,auth2):
+                            feature += G.get_edge_data(auth1, auth2)['weight']
         
         affinities.append(feature)
         
@@ -224,8 +279,15 @@ def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
             
         i+=1
     
+    pagerank = nx.pagerank(G)
+    sorted_pgr = sorted(pagerank.items(), key=operator.itemgetter(1), reverse = True)
+    key_pgr = [int(a) for (a,b) in sorted_pgr]
+    key_dict = dict()
+    for i in range(len(key_pgr)):
+        key_dict[key_pgr[i]]=i
+    
     features_edges = []
-    for citation in training_set:
+    for citation in citation_set:
         ic0 = key_dict[int(citation[0])]
         ic1 = key_dict[int(citation[1])]
         features_edges.append(G.node[int(citation[0])]['pageclub'] + G.node[int(citation[1])]['pageclub'])
@@ -240,18 +302,37 @@ def compute_page_rank_feature_for_authors(citation_set, node_info, G=None):
     else:
         bool = False
     
+    reverse_index = dict()
+    for i,a in enumerate(node_info):
+        reverse_index[int(a[0])] = i
+    
     pg_rk = nx.pagerank(G)
     pg_rk_features = []
     for citation in citation_set:
         source = citation[0]
         target = citation[1]
         
-        source_authors = [element[3].split(",") for element in node_info if element[0]==source][0]
-        target_authors = [element[3].split(",") for element in node_info if element[0]==target][0]
+        if type(node_info[reverse_index[source],3]) != float:
+            source_authors = re.sub(r',Jr.?', 'Jr',
+                                re.sub(r',(?=[a-z])', '',
+                                       re.sub(r'\([^)]*\)?', '',
+                                              re.sub(r' ', '' , node_info[reverse_index[source],3])))).split(",")
+        else:
+            source_authors = []
+            
+        if type(node_info[reverse_index[target],3]) != float:
+            target_authors = re.sub(r',Jr.?', 'Jr',
+                                    re.sub(r',(?=[a-z])', '',
+                                           re.sub(r'\([^)]*\)?', '',
+                                                  re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",")
+        else:
+            target_authors = []
         
         feature = 0
         for auth in source_authors + target_authors:
-            feature += pg_rk[auth]
+            if auth != '':
+            
+                feature += pg_rk[auth]
         
         pg_rk_features.append(feature)
     
@@ -285,14 +366,31 @@ def compute_rich_club_feature_for_authors(citation_set, node_info, G=None):
     else:
         bool = False
     
+    reverse_index = dict()
+    for i,a in enumerate(node_info):
+        reverse_index[int(a[0])] = i
+    
     rc_cl = nx.richclub.rich_club_coefficient(G)
     rc_cl_features = []
     for citation in citation_set:
         source = citation[0]
         target = citation[1]
         
-        source_authors = [element[3].split(",") for element in node_info if element[0]==source][0]
-        target_authors = [element[3].split(",") for element in node_info if element[0]==target][0]
+        if type(node_info[reverse_index[source],3]) != float:
+            source_authors = re.sub(r',Jr.?', 'Jr',
+                                re.sub(r',(?=[a-z])', '',
+                                       re.sub(r'\([^)]*\)?', '',
+                                              re.sub(r' ', '' , node_info[reverse_index[source],3])))).split(",")
+        else:
+            source_authors = []
+            
+        if type(node_info[reverse_index[target],3]) != float:
+            target_authors = re.sub(r',Jr.?', 'Jr',
+                                    re.sub(r',(?=[a-z])', '',
+                                           re.sub(r'\([^)]*\)?', '',
+                                                  re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",")
+        else:
+            target_authors = []
         
         feature = 0
         for auth in source_authors + target_authors:

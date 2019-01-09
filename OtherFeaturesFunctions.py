@@ -23,6 +23,10 @@ from collections import defaultdict
 import operator
 
 def initialize_nltk():
+    '''
+    Initialize the stopwords and stemmer
+    '''
+    
     nltk.download('punkt') # for tokenization
     nltk.download('stopwords')
     stpwds = set(nltk.corpus.stopwords.words("english"))
@@ -32,31 +36,63 @@ def initialize_nltk():
 
 
 def title_doc2voc(node_info, citation_set):
-    token_title =    [TaggedDocument(words=nltk.tokenize.word_tokenize(element[2].lower()),tags=[str(element[0])]) for i,element in enumerate(node_info)]
-    model_title = Doc2Vec(size=128,
+    '''
+    Returns the feature extracted from the computation of the doc2vec model applied to the title data
+    '''
+    
+    token_title =[
+        TaggedDocument(
+            words=nltk.tokenize.word_tokenize(element[2].lower()),
+            tags=[str(element[0])]
+        ) for i,element in enumerate(node_info)
+    ]
+    
+    #building the doc2vec model
+    model_title = Doc2Vec(
+                size=128,
                 alpha=0.025, 
                 min_alpha=0.00025,
                 min_count=1,
-                dm =0)
+                dm =0
+    )
     model_title.build_vocab(token_title)
+    
+    #training the model
     for epoch in range(20):
-        model_title.train(token_title,
+        model_title.train(
+                    token_title,
                     total_examples=model_title.corpus_count,
-                    epochs=model_title.iter)
+                    epochs=model_title.iter
+        )
 
         model_title.alpha -= 0.0002
 
         model_title.min_alpha = model_title.alpha
 
+    #building the feature by computing the cosine distance between the arrays
     titlefeatures = []
     for citation in citation_set:
-        d = scipy.spatial.distance.cosine(model_title.docvecs[str(citation[0])],model_title.docvecs[str(citation[1])])
+        d = scipy.spatial.distance.cosine(
+            model_title.docvecs[str(citation[0])],
+            model_title.docvecs[str(citation[1])]
+        )
         titlefeatures.append(d)
         
     return titlefeatures
 
 def abstract_doc2voc(node_info,citation_set):
-    token_abstract = [TaggedDocument(words=nltk.tokenize.word_tokenize(element[5].lower()),tags=[str(element[0])]) for i,element in enumerate(node_info)]
+    '''
+    Returns the feature extracted from the computation of the doc2vec model applied to the title data
+    '''
+    
+    token_abstract = [
+        TaggedDocument(
+            words=nltk.tokenize.word_tokenize(element[5].lower()),
+            tags=[str(element[0])]
+        ) for i,element in enumerate(node_info)
+    ]
+    
+    #building the doc2vec model
     model_abstract = Doc2Vec(size=128,
                 alpha=0.025, 
                 min_alpha=0.00025,
@@ -64,29 +100,39 @@ def abstract_doc2voc(node_info,citation_set):
                 dm =0)
     model_abstract.build_vocab(token_abstract)
 
+    #training the model
     for epoch in range(20):
-        model_abstract.train(token_abstract,
+        model_abstract.train(
+                    token_abstract,
                     total_examples=model_abstract.corpus_count,
-                    epochs=model_abstract.iter)
+                    epochs=model_abstract.iter
+        )
 
         model_abstract.alpha -= 0.0002
         
         model_abstract.min_alpha = model_title.alpha
         
+    #building the feature
     abstractfeatures = []
     for citation in citation_set:
-        d = scipy.spatial.distance.cosine(model_abstract.docvecs[str(citation[0])],model_abstract.docvecs[str(citation[1])])
+        d = scipy.spatial.distance.cosine(
+            model_abstract.docvecs[str(citation[0])],
+            model_abstract.docvecs[str(citation[1])]
+        )
         abstractfeatures.append(d)
         
     return abstractfeatures
 
 def h_index(citation_set, node_info, G):
-    
-    #We clean the authors names and put them into a single array
-    authors_array = np.array([(re.sub(r',Jr.?', 'Jr',
-                            re.sub(r',(?=[a-z])', '',
-                                   re.sub(r'\([^)]*\)?', '',
-                                          re.sub(r' ', '' , a[3])))).split(","),a[0]) if type(a[3]) == str else [] for a in node_info])
+    '''
+    Returns the feature extracted from the h-index values of the papers' authors.
+    '''
+    #We clean the authors names and put them into a single array. We use the regex library.
+    authors_array = np.array([(
+        re.sub(r',Jr.?', 'Jr',
+               re.sub(r',(?=[a-z])', '',
+                      re.sub(r'\([^)]*\)?', '',
+                             re.sub(r' ', '' , a[3])))).split(","),a[0]) if type(a[3]) == str else [] for a in node_info])
     
     #papers_by_author gives the id of the papers an author wrote
     papers_by_author = defaultdict(list)
@@ -141,6 +187,10 @@ def h_index(citation_set, node_info, G):
 
 
 def abstract_TFIDF(node_info, stpwds, stemmer):
+    '''
+    Returns the TFIDF from the abstract data
+    '''
+ 
     corpus = [' '.join([stemmer.stem(a) for a in nltk.tokenize.word_tokenize(element[5])]) for element in node_info]
     vectorizer = TfidfVectorizer(stop_words="english")
     features_TFIDF = vectorizer.fit_transform(corpus)
@@ -148,6 +198,10 @@ def abstract_TFIDF(node_info, stpwds, stemmer):
     return features_TFIDF
 
 def title_TFIDF(node_info, stpwds, stemmer):
+    '''
+    Returns the TFIDF from the title data
+    '''
+    
     corpus = [' '.join([stemmer.stem(a) for a in nltk.tokenize.word_tokenize(element[2])]) for element in node_info]
     vectorizer = TfidfVectorizer(stop_words="english")
     features_TFIDF = vectorizer.fit_transform(corpus)
@@ -155,9 +209,16 @@ def title_TFIDF(node_info, stpwds, stemmer):
     return features_TFIDF
     
 def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds,  stemmer):
+    '''
+    Returns the feature extracted from the computation of the TFIDF applied on the abstract data
+    '''
+     
         dist_abstract = []
         TFIDF_abstract = abstract_TFIDF(node_info, stpwds, stemmer)
 
+        #Dictionary with the paper ID as the key and its index in node_info as the value
+        #This help skip a loop afterwards while looking up at a paper's info, and is used in several other following functions
+        
         reverse_index = dict()
         for i,a in enumerate(node_info):
             reverse_index[int(a[0])] = i
@@ -170,7 +231,7 @@ def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds,  stemme
             dist_abstract.append((TFIDF_abstract[reverse_index[source]].dot(TFIDF_abstract[reverse_index[target]].T))[0,0])
     
             counter += 1
-            if counter % 5000 == True:
+            if counter % 30000 == True:
                 print(counter, "training examples processsed")
 
         dist_abstract = np.array(dist_abstract)
@@ -178,6 +239,10 @@ def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds,  stemme
         return dist_abstract
     
 def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds, stemmer):
+    '''
+    Returns the feature extracted from the computation of the TFIDF applied on the title data
+    '''
+    
         dist_title = []
         TFIDF_title = title_TFIDF(node_info, stpwds, stemmer)
         
@@ -193,7 +258,7 @@ def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds, stemmer):
             dist_title.append((TFIDF_title[reverse_index[source]].dot(TFIDF_title[reverse_index[target]].T))[0,0])
     
             counter += 1
-            if counter % 5000 == True:
+            if counter % 30000 == True:
                 print(counter, "training examples processsed")
 
         dist_title = np.array(dist_title)
@@ -201,6 +266,10 @@ def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds, stemmer):
         return dist_title
     
 def compute_temp_diff(citation_set, node_info, IDs):
+    '''
+    Returns the feature corresponding to the year difference between the papers on an edge
+    '''
+    
         temp_diff = []
 
         reverse_index = dict()
@@ -220,7 +289,7 @@ def compute_temp_diff(citation_set, node_info, IDs):
                     )
             
             counter += 1
-            if counter % 5000 == True:
+            if counter % 30000 == True:
                 print(counter, "training examples processsed")
         
         temp_diff = np.array(temp_diff)
@@ -228,6 +297,10 @@ def compute_temp_diff(citation_set, node_info, IDs):
         return temp_diff
     
 def compute_overlaping_titles(citation_set, node_info, IDs, stemmer, stpwds):
+    '''
+    Returns the feature of the number of intersecting words between the two papers' title
+    '''
+   
         overlap_title = []
         
         reverse_index = dict()
@@ -241,7 +314,6 @@ def compute_overlaping_titles(citation_set, node_info, IDs, stemmer, stpwds):
     
             source_info = node_info[reverse_index[source]]
             target_info = node_info[reverse_index[target]]
-    
             
             source_title = source_info[2].lower().split(" ")
             
@@ -257,7 +329,7 @@ def compute_overlaping_titles(citation_set, node_info, IDs, stemmer, stpwds):
                     )
             
             counter += 1
-            if counter % 5000 == True:
+            if counter % 30000 == True:
                 print(counter, "training examples processsed")
         
         return np.array(overlap_title)
@@ -265,6 +337,10 @@ def compute_overlaping_titles(citation_set, node_info, IDs, stemmer, stpwds):
         
         
 def compute_common_auth(citation_set, node_info, IDs):
+    '''
+    Returns the feature of the number of intersecting authors between the two papers
+    '''
+   
         comm_auth = []
         
         reverse_index = dict()
@@ -294,7 +370,7 @@ def compute_common_auth(citation_set, node_info, IDs):
                     )
             
             counter += 1
-            if counter % 5000 == True:
+            if counter % 30000 == True:
                 print(counter, "training examples processsed")
             
         comm_auth = np.array(comm_auth)
@@ -317,6 +393,10 @@ def compute_author_affinity(citation_set, node_info, G, IDs):
     return GF.compute_authors_affinity_for_article(citation_set,node_info,G)
 
 def compute_same_journal_or_not(citation_set, node_info):
+    '''
+    Returns the feature, an array of 1 or 0 whether the papers have been published in the same journal or not
+    '''
+   
         same_journal = []
 
         reverse_index = dict()
@@ -338,7 +418,7 @@ def compute_same_journal_or_not(citation_set, node_info):
                     )
             
             counter += 1
-            if counter % 5000 == True:
+            if counter % 30000 == True:
                 print(counter, "training examples processsed")
         
         same_journal = np.array(same_journal)
