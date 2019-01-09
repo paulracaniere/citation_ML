@@ -11,15 +11,22 @@ import operator
 import re
 
 def graph_articles(citation_set, node_info, directed_or_not = 'n'):
+    '''
+    Returns the networkx graph corresponding to the papers as nodes, linked by citations
+    '''
+    #Choose to compute a directed graph or not
     if directed_or_not == 'y':
         G = nx.DiGraph()
     else:
         G = nx.Graph()
+        
     for node in node_info:
         if node[0] != 'ID':
             G.add_node(int(node[0]), year = node[1])
+            
     for i in citation_set:
         if i[2] == 1 or i[2] == '1':
+            #In case of a directed graph, we can know the sens of the citation if one year of parution is strictly inferior to the other
             if G.node[int(i[0])]['year'] <= G.node[int(i[1])]['year']:
                 G.add_edge(i[0], i[1])
             else:
@@ -27,7 +34,9 @@ def graph_articles(citation_set, node_info, directed_or_not = 'n'):
     return G
 
 def graph_authors(citation_set, node_info, IDs, directed_or_not = 'n'):
-    
+    '''
+    Returns the networkx graph corresponding to the authors as nodes, linked by citations of papers of eachother
+    '''    
     reverse_index = dict()
     for i,a in enumerate(node_info):
         reverse_index[int(a[0])] = i
@@ -57,8 +66,6 @@ def graph_authors(citation_set, node_info, IDs, directed_or_not = 'n'):
                                                   re.sub(r' ', '' , node_info[reverse_index[target],3])))).split(",")
         else:
             target_authors = []
-        
-        #print(source_authors[:10])
         
         if citation[2] == '1' or citation[2] == 1:
             for auth1 in source_authors:
@@ -76,12 +83,15 @@ def graph_authors(citation_set, node_info, IDs, directed_or_not = 'n'):
                
         counter += 1
     
-        if counter % 5000 == True:
+        if counter % 30000 == True:
             print(counter, "training examples processsed")
     
     return G
 
 def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
+    '''
+    Returns the networkx graph for the author affinity feature, same as the graph_autors but with an added weight information
+    ''' 
     reverse_index = dict()
     for i,a in enumerate(node_info):
         reverse_index[int(a[0])] = i
@@ -112,8 +122,7 @@ def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
         else:
             target_authors = []
         
-        #print(source_authors[:10])
-        
+        #If the authors of one of the paper quote a paper from one of the other authors, we add 1 to the weight
         if citation[2] == '1' or citation[2] == 1:
             for auth1 in source_authors:
                 if auth1 != '':
@@ -133,11 +142,12 @@ def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
                
         counter += 1
     
-        if counter % 5000 == True:
+        if counter %30000 == True:
             print(counter, "traininefgesgsegg examples processsed")
     
+    
     for node in node_info:
-        
+        #return the authors of an article
         if type(node_info[reverse_index[target],3]) != float:
             authors_art = re.sub(r',Jr.?', 'Jr',
                                 re.sub(r',(?=[a-z])', '',
@@ -146,6 +156,7 @@ def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
         else:
             authors_art = []
         
+        #if they are atleast two authors for an article, we add 1 to the weight between the authors that wrote on the same article
         if len(authors_art) >= 2:
             for i in range(len(authors_art)):
                 for j in range(i,len(authors_art)):
@@ -155,11 +166,15 @@ def graph_authors_weight(citation_set, node_info, IDs, directed_or_not = 'n'):
                         G.get_edge_data(auth1,auth2)['weight'] += 1
                     else:
                         G.add_edge(auth1, auth2, weight=1)
-        
     
     return G
 
+
 def compute_authors_affinity_for_article(citation_set, node_info, G=None):
+    '''
+    Returns the feature computed from the authors affinity, from the weighted author graph G
+    ''' 
+    
     if G != G:
         G = graph_authors_weight(citation_set, node_info)
     
@@ -189,6 +204,7 @@ def compute_authors_affinity_for_article(citation_set, node_info, G=None):
         else:
             target_authors = []
         
+        #we add up the sum of the authors affinity between the nodes
         feature = 0
         for auth1 in source_authors:
             if auth1 != '':
@@ -201,7 +217,12 @@ def compute_authors_affinity_for_article(citation_set, node_info, G=None):
         
     return np.array(affinities)
 
+
 def compute_page_rank_feature_for_articles(citation_set, G=None):
+    '''
+    Returns the feature computed from the calculation of the PageRank on the articles graph
+    ''' 
+    
     if G != G:
         G = graph_articles(citation_set)
         bool = True
@@ -223,24 +244,29 @@ def one_page_rank_feature_for_articles(citation, pg_rk):
     return pg_rk[int(citation[0])] + pg_rk[int(citation[1])]
     
 def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
+    '''
+    Returns the feature computed from the calculation of the PageClub on the articles graph
+    ''' 
+    
     if G != G:
         G = graph_articles(citation_set, node_info, directed_or_not='y')
     
     pg_rk = nx.pagerank(G)
     sorted_pgr = sorted(pg_rk.items(), key= operator.itemgetter(1), reverse = True)
-    #sp_keys = sorted_pgr.keys()
+    
+    #The IDs of the papers node, sorted by decreasing pagerank value
     sp_keys = [int(a) if a!='ID' else -1 for (a,b) in sorted_pgr]
-    #print(sp_keys)
+    
+    #Dictionary to know if the node has been already seen in the main for loop
     sp_keys_seen = dict()
     for s in sp_keys:
         sp_keys_seen[s] = False
-    
-    #nbedgesin = [0]
     
     pageclub = []
     
     in_degs_tuple = list(G.in_degree())
     in_degs = [b for (a,b) in in_degs_tuple]
+    #Average in degree value in the graph G
     k_in = sum(in_degs)/ float(len(in_degs))
     
     n = len(sp_keys)
@@ -249,8 +275,6 @@ def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
     i=1
     kincum=0
     koutcum=0
-    
-    
     
     undirG = G.to_undirected()
     
@@ -268,8 +292,10 @@ def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
             sp_keys_seen[int(k)]= True
         else:
             sp_keys_seen[-1] = True
+        #Cumulative in and out degree of the node with a pagerank value >= k
         kincum += G.in_degree(k)
         koutcum += G.out_degree(k)
+        #Compute the pageclub value of this node
         if kincum>0 and koutcum >0:
             pageclub.append((s*k_in*n)/(kincum*koutcum))
             G.node[k]['pageclub'] = (s*k_in*n)/(kincum*koutcum)
@@ -278,9 +304,8 @@ def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
             G.node[k]['pageclub'] = 1
             
         i+=1
-    
-    pagerank = nx.pagerank(G)
-    sorted_pgr = sorted(pagerank.items(), key=operator.itemgetter(1), reverse = True)
+
+    #after computing the pageclub value of each node, we compute the feature
     key_pgr = [int(a) for (a,b) in sorted_pgr]
     key_dict = dict()
     for i in range(len(key_pgr)):
@@ -296,6 +321,10 @@ def compute_page_club_feature_for_articles(citation_set, node_info, G=None):
     return features_edges
 
 def compute_page_rank_feature_for_authors(citation_set, node_info, G=None):
+    '''
+    Returns the feature computed from the calculation of the PageRank on the authors graph
+    ''' 
+    
     if G != G:
         G = graph_authors(citation_set, node_info)
         bool = True
@@ -307,6 +336,7 @@ def compute_page_rank_feature_for_authors(citation_set, node_info, G=None):
         reverse_index[int(a[0])] = i
     
     pg_rk = nx.pagerank(G)
+    
     pg_rk_features = []
     for citation in citation_set:
         source = citation[0]
@@ -331,7 +361,6 @@ def compute_page_rank_feature_for_authors(citation_set, node_info, G=None):
         feature = 0
         for auth in source_authors + target_authors:
             if auth != '':
-            
                 feature += pg_rk[auth]
         
         pg_rk_features.append(feature)
@@ -342,6 +371,10 @@ def compute_page_rank_feature_for_authors(citation_set, node_info, G=None):
         return np.array(pg_rk_features)
     
 def compute_rich_club_feature_for_articles(citation_set, G=None):
+    '''
+    Returns the feature computed from the calculation of the RichClub on the articles graph
+    ''' 
+        
     if G != G:
         G = graph_articles(citation_set)
         bool = True
@@ -360,6 +393,10 @@ def compute_rich_club_feature_for_articles(citation_set, G=None):
         return np.array(rc_cl_features)
     
 def compute_rich_club_feature_for_authors(citation_set, node_info, G=None):
+    '''
+    Returns the feature computed from the calculation of the RichClub on the authors graph
+    ''' 
+    
     if G != G:
         G = graph_authors(citation_set, node_info)
         bool = True
@@ -371,6 +408,7 @@ def compute_rich_club_feature_for_authors(citation_set, node_info, G=None):
         reverse_index[int(a[0])] = i
     
     rc_cl = nx.richclub.rich_club_coefficient(G)
+    
     rc_cl_features = []
     for citation in citation_set:
         source = citation[0]
@@ -404,6 +442,10 @@ def compute_rich_club_feature_for_authors(citation_set, node_info, G=None):
         return np.array(rc_cl_features)
     
 def compute_shorthest_path_feature_for_articles(citation_set,G=None):
+    '''
+    Returns the feature corresponding to the shortest path between nodes in the papers graph
+    '''
+    
     if G != G:
         G = graph_articles(citation_set)
         bool = True
@@ -412,11 +454,14 @@ def compute_shorthest_path_feature_for_articles(citation_set,G=None):
     
     sht_pth_features = []
     for citation in citation_set:
-        if citation[2] == '1':
+        #to avoid having a 1 shortest path between the linked nodes in the training_test, we remove the edge before calculating again the distance, and readding the edge
+        if citation[2] == '1' or citation[2] == 1 :
             G.remove_edge(citation[0], citation[1])
+            
         sht_pth_features.append(
                 nx.shortest_path_length(G,citation[0], citation[1]) if nx.has_path(G, citation[0], citation[1]) else 30)
-        if citation[2] == '1':
+        
+        if citation[2] == '1' or citation[2] == 1:
             G.add_edge(citation[0], citation[1])
     
     if bool:

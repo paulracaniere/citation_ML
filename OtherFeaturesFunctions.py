@@ -110,7 +110,7 @@ def abstract_doc2voc(node_info,citation_set):
 
         model_abstract.alpha -= 0.0002
         
-        model_abstract.min_alpha = model_title.alpha
+        model_abstract.min_alpha = model_abstract.alpha
         
     #building the feature
     abstractfeatures = []
@@ -208,13 +208,15 @@ def title_TFIDF(node_info, stpwds, stemmer):
 
     return features_TFIDF
     
-def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds,  stemmer):
+def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds,  stemmer, TFIDF_abstract=None):
     '''
     Returns the feature extracted from the computation of the TFIDF applied on the abstract data
     '''
      
         dist_abstract = []
-        TFIDF_abstract = abstract_TFIDF(node_info, stpwds, stemmer)
+        if TFIDF_abstract != TFIDF_abstract:
+            TFIDF_abstract = abstract_TFIDF(node_info, stpwds, stemmer)
+
 
         #Dictionary with the paper ID as the key and its index in node_info as the value
         #This help skip a loop afterwards while looking up at a paper's info, and is used in several other following functions
@@ -236,15 +238,17 @@ def compute_TFIDF_abstract_feature(citation_set, node_info, IDs, stpwds,  stemme
 
         dist_abstract = np.array(dist_abstract)
         
-        return dist_abstract
+        return dist_abstract, TFIDF_abstract
     
-def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds, stemmer):
+def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds, stemmer, TFIDF_title=None):
     '''
     Returns the feature extracted from the computation of the TFIDF applied on the title data
     '''
     
         dist_title = []
-        TFIDF_title = title_TFIDF(node_info, stpwds, stemmer)
+        
+        if TFIDF_title != TFIDF_title:
+            TFIDF_title = TFIDF_title = title_TFIDF(node_info, stpwds, stemmer)
         
         reverse_index = dict()
         for i,a in enumerate(node_info):
@@ -263,7 +267,7 @@ def compute_TFIDF_title_feature(citation_set, node_info, IDs, stpwds, stemmer):
 
         dist_title = np.array(dist_title)
         
-        return dist_title
+        return dist_title, TFIDF_title
     
 def compute_temp_diff(citation_set, node_info, IDs):
     '''
@@ -425,5 +429,225 @@ def compute_same_journal_or_not(citation_set, node_info):
         
         return same_journal
 
+        
+def compute_all_features_training(citation_set, node_info, IDs):
+    '''
+    Compute all of the training features and returns them concatenated
+    '''
+    
+    stpwds, stemmer = initialize_nltk()
+    
+    graph_article = GF.graph_articles(citation_set)
+    graph_authors = GF.graph_authors(citation_set, node_info, IDs)
+    graph_authors_weight = GF.graph_authors_weight(citation_set, node_info, IDs)
+    
+    doc2voc_title = title_doc2voc(
+            node_info, 
+            citation_set
+            ).reshape(len(citation_set),1)
+    doc2voc_abstract = abstract_doc2voc(
+            node_info, 
+            citation_set
+            ).reshape(len(citation_set),1)
+    h_indexe = h_index(
+            citation_set, 
+            node_info, 
+            graph_article
+            ).reshape(len(citation_set),1)
+    TFIDF_abstract, TFIDF_sparse_abstract = compute_TFIDF_abstract_feature(
+            citation_set, 
+            node_info, 
+            IDs, 
+            stpwds, 
+            stemmer
+            ).reshape(len(citation_set),1)
+    TFIDF_title, TFIDF_sparse_title = compute_TFIDF_title_feature(
+            citation_set, 
+            node_info, 
+            IDs, 
+            stpwds, 
+            stemmer
+            ).reshape(len(citation_set),1)
+    temp_diff = compute_temp_diff(
+            citation_set, 
+            node_info, 
+            IDs
+            ).reshape(len(citation_set),1)
+    overlaping_title = compute_overlaping_titles(
+            citation_set, 
+            node_info, 
+            IDs, 
+            stemmer, 
+            stpwds
+            ).reshape(len(citation_set),1)
+    common_auth = compute_common_auth(
+            citation_set, 
+            node_info, 
+            IDs
+            ).reshape(len(citation_set),1)
+    article_page_rank = articles_page_rank_feature(
+            citation_set, 
+            node_info, 
+            graph_article, 
+            IDs
+            ).reshape(len(citation_set),1)
+    authors_page_rank = authors_page_rank_feature(
+            citation_set, 
+            node_info, 
+            graph_authors, 
+            IDs
+            ).reshape(len(citation_set),1)
+    page_club = page_club_feature(
+            citation_set, 
+            node_info, 
+            graph_article
+            ).reshape(len(citation_set),1)
+    shorthest_path = shorthest_path_feature(
+            citation_set, 
+            node_info, 
+            graph_article
+            ).reshape(len(citation_set),1)
+    author_affinity = compute_author_affinity(
+            citation_set, 
+            node_info, 
+            graph_authors_weight, 
+            IDs
+            ).reshape(len(citation_set),1)
+    same_journal_or_not = compute_same_journal_or_not(
+            citation_set, 
+            node_info
+            ).reshape(len(citation_set),1)
+    
+    data = np.concatenate(
+            doc2voc_title,
+            doc2voc_abstract,
+            h_indexe,
+            TFIDF_abstract,
+            TFIDF_title,
+            temp_diff,
+            overlaping_title,
+            common_auth,
+            article_page_rank,
+            authors_page_rank,
+            page_club,
+            shorthest_path,
+            author_affinity,
+            same_journal_or_not
+            )
+    
+    return data, graph_article, graph_authors, graph_authors_weight, TFIDF_sparse_abstract, TFIDF_sparse_title
+
+def compute_all_features_testing(citation_set, node_info, IDs, graph_article, graph_authors, graph_authors_weight, TFIDF_sparse_abstract, TFIDF_sparse_title):
+    '''
+    Compute all of the testing features and returns them concatenated
+    '''
+    
+    stpwds, stemmer = initialize_nltk()
+    
+    doc2voc_title = title_doc2voc(
+            node_info, 
+            citation_set
+            ).reshape(len(citation_set),1)
+    doc2voc_abstract = abstract_doc2voc(
+            node_info, 
+            citation_set
+            ).reshape(len(citation_set),1)
+    h_indexe = h_index(
+            citation_set, 
+            node_info, 
+            graph_article
+            ).reshape(len(citation_set),1)
+    TFIDF_abstract, TFIDF_sparse_abstract = compute_TFIDF_abstract_feature(
+            citation_set, 
+            node_info, 
+            IDs, 
+            stpwds, 
+            stemmer,
+            TFIDF_sparse_abstract
+            ).reshape(len(citation_set),1)
+    TFIDF_title, TFIDF_sparse_title = compute_TFIDF_title_feature(
+            citation_set, 
+            node_info, 
+            IDs, 
+            stpwds, 
+            stemmer,
+            TFIDF_sparse_title
+            ).reshape(len(citation_set),1)
+    temp_diff = compute_temp_diff(
+            citation_set, 
+            node_info, 
+            IDs
+            ).reshape(len(citation_set),1)
+    overlaping_title = compute_overlaping_titles(
+            citation_set, 
+            node_info, 
+            IDs, 
+            stemmer, 
+            stpwds
+            ).reshape(len(citation_set),1)
+    common_auth = compute_common_auth(
+            citation_set, 
+            node_info, 
+            IDs
+            ).reshape(len(citation_set),1)
+    article_page_rank = articles_page_rank_feature(
+            citation_set, 
+            node_info, 
+            graph_article, 
+            IDs
+            ).reshape(len(citation_set),1)
+    authors_page_rank = authors_page_rank_feature(
+            citation_set, 
+            node_info, 
+            graph_authors, 
+            IDs
+            ).reshape(len(citation_set),1)
+    page_club = page_club_feature(
+            citation_set, 
+            node_info, 
+            graph_article
+            ).reshape(len(citation_set),1)
+    shorthest_path = shorthest_path_feature(
+            citation_set, 
+            node_info, 
+            graph_article
+            ).reshape(len(citation_set),1)
+    author_affinity = compute_author_affinity(
+            citation_set, 
+            node_info, 
+            graph_authors_weight, 
+            IDs
+            ).reshape(len(citation_set),1)
+    same_journal_or_not = compute_same_journal_or_not(
+            citation_set, 
+            node_info
+            ).reshape(len(citation_set),1)
+    
+    data = np.concatenate(
+            doc2voc_title,
+            doc2voc_abstract,
+            h_indexe,
+            TFIDF_abstract,
+            TFIDF_title,
+            temp_diff,
+            overlaping_title,
+            common_auth,
+            article_page_rank,
+            authors_page_rank,
+            page_club,
+            shorthest_path,
+            author_affinity,
+            same_journal_or_not
+            )
+    
+    return data
+    
+    
+    
+
+
+
+
+    
 
         
